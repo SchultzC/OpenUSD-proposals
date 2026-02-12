@@ -1,0 +1,40 @@
+#usda 1.0
+(
+    doc = """Example: Time varying simulation data.
+
+    Demonstrates how USD's timeSamples mechanism expresses the temporal
+    dimension of CAE data. The displacement field references different
+    CGNS files at each timestep while the mesh remains static."""
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def CaeDataSet "TransientAnalysis" (
+        prepend apiSchemas = ["CaePointCloudAPI"]
+    )
+    {
+        rel cae:pointCloud:coordinates = </World/TransientAnalysis/Points>
+        custom rel field:displacement = </World/TransientAnalysis/Displacement>
+
+        def CaeCgnsFieldArray "Points"
+        {
+            asset[] fileNames = [@./results_t000.cgns@]
+            string fieldPath = "/Base/Zone/GridCoordinates/Coordinates"
+            uniform token fieldAssociation = "vertex"
+        }
+
+        def CaeCgnsFieldArray "Displacement"
+        {
+            # Time varying: different files per timestep
+            asset[] fileNames.timeSamples = {
+                0:   [@./results_t000.cgns@],
+                10:  [@./results_t010.cgns@],
+                20:  [@./results_t020.cgns@],
+                30:  [@./results_t030.cgns@],
+            }
+            string fieldPath = "/Base/Zone/FlowSolution/Displacement"
+            uniform token fieldAssociation = "vertex"
+        }
+    }
+}

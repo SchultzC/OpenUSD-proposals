@@ -1,0 +1,91 @@
+#usda 1.0
+(
+    doc = """Example: Unstructured CFD mesh with solution fields.
+
+    Demonstrates CaeDataSet with CaePointCloudAPI applied, using
+    CaeCgnsFieldArray prims to reference data in a solver native
+    CGNS file. Bulk numeric data remains in the .cgns file and is
+    read on demand by a data delegate."""
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def CaeDataSet "FluidDomain" (
+        prepend apiSchemas = ["CaePointCloudAPI"]
+    )
+    {
+        # Spatial coordinates via CaePointCloudAPI
+        # (split into X, Y, Z per CGNS storage convention)
+        rel cae:pointCloud:coordinates = [
+            </World/FluidDomain/GridCoordinatesX>,
+            </World/FluidDomain/GridCoordinatesY>,
+            </World/FluidDomain/GridCoordinatesZ>
+        ]
+
+        # Named field relationships
+        custom rel field:pressure = </World/FluidDomain/Pressure>
+        custom rel field:velocity = </World/FluidDomain/Velocity>
+        custom rel field:temperature = </World/FluidDomain/Temperature>
+        custom rel field:elementConnectivity = </World/FluidDomain/ElementConnectivity>
+        custom rel field:elementStartOffset = </World/FluidDomain/ElementStartOffset>
+
+        # --- CGNS field arrays (bulk data in solver native .cgns file) ---
+
+        def CaeCgnsFieldArray "GridCoordinatesX"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateX"
+            uniform token fieldAssociation = "vertex"
+        }
+
+        def CaeCgnsFieldArray "GridCoordinatesY"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateY"
+            uniform token fieldAssociation = "vertex"
+        }
+
+        def CaeCgnsFieldArray "GridCoordinatesZ"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateZ"
+            uniform token fieldAssociation = "vertex"
+        }
+
+        def CaeCgnsFieldArray "ElementConnectivity"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/Elements/ElementConnectivity"
+            uniform token fieldAssociation = "none"
+        }
+
+        def CaeCgnsFieldArray "ElementStartOffset"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/Elements/ElementStartOffset"
+            uniform token fieldAssociation = "none"
+        }
+
+        def CaeCgnsFieldArray "Pressure"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/FlowSolution/Pressure"
+            uniform token fieldAssociation = "cell"
+        }
+
+        def CaeCgnsFieldArray "Velocity"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/FlowSolution/Velocity"
+            uniform token fieldAssociation = "cell"
+        }
+
+        def CaeCgnsFieldArray "Temperature"
+        {
+            asset[] fileNames = [@./simulation_results.cgns@]
+            string fieldPath = "/Base/Zone/FlowSolution/Temperature"
+            uniform token fieldAssociation = "cell"
+        }
+    }
+}
