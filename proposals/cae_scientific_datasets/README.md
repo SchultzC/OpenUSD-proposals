@@ -1,687 +1,673 @@
-# OpenUSD Schemas for CAE Simulation Datasets
+# OpenUSD for Scientific Data
 
-A minimal schema vocabulary for representing solver native scientific
-datasets in OpenUSD without format conversion.
+## Contents
 
-## Summary
+- [Introduction](#introduction)
+- [Motivation](#motivation)
+  - [Scientific data today](#scientific-data-today)
+  - [OpenUSD context](#openusd-context)
+- [Problem statement](#problem-statement)
+  - [Two concerns to keep separate](#two-concerns-to-keep-separate)
+  - [Why this matters now](#why-this-matters-now)
+- [Key questions](#key-questions)
+  - [What is the minimum common vocabulary?](#what-is-the-minimum-common-vocabulary)
+  - [How should scientific files participate in composition?](#how-should-scientific-files-participate-in-composition)
+  - [How should vendor and domain extensions mature?](#how-should-vendor-and-domain-extensions-mature)
+- [Existing OpenUSD mechanisms](#existing-openusd-mechanisms)
+- [Industry use cases](#industry-use-cases)
+- [Design considerations](#design-considerations)
+  - [Principles](#principles)
+  - [Likely direction](#likely-direction)
+  - [Evaluation criteria](#evaluation-criteria)
+  - [Open questions for discussion](#open-questions-for-discussion)
+- [Illustrative encoding](#illustrative-encoding)
+- [Relationship to implementation work](#relationship-to-implementation-work)
+- [Risks](#risks)
+- [Alternate approaches](#alternate-approaches)
+- [Out of scope](#out-of-scope)
+- [Next steps](#next-steps)
 
-This proposal defines a small set of OpenUSD schema types for
-describing Computer Aided Engineering (CAE) and scientific simulation
-datasets.
-The schemas enable cross solver/tool interoperability through
-USD composition while preserving solver native files as the
-source of truth.
+## Introduction
 
-Bulk numeric data remains in its original format and is read on demand.
-OpenUSD acts as the composition and access layer, not a data container.
+Scientific and engineering workflows often need to assemble simulation,
+measurement, geometry, and derived results in one composed scene.
+OpenUSD already provides the composition model, namespace, value resolution, and
+asset-resolution machinery for this kind of assembly. What is missing is a
+shared way to describe scientific datasets so that field data from solver-native
+formats can be discovered and queried through USD without first being converted
+into an application-specific intermediate.
 
-The proposal defines:
+This proposal reframes earlier CAE schema work around a broader scientific data
+problem. The goal is not to standardize a particular vendor implementation or
+OpenUSD plugin architecture. The goal is to build consensus on the data-model
+concepts that scientific files need when they participate in USD composition:
+datasets, fields, arrays, topology association, time, provenance, and extension
+points for domain-specific meaning.
 
-- **CaeDataSet** : a container prim representing one scientific dataset
-- **CaeFieldArray** : a base prim for externally stored numeric arrays
-- **Data model API schemas** : single apply APIs that define how to
-  interpret dataset arrays
-  (`CaePointCloudAPI`, `CaeMeshAPI`, `CaeDenseVolumeAPI`)
-- **Format specific FieldArray subtypes** : an extension point for
-  file format locator attributes, with `CaeCgnsFieldArray`
-  (CGNS, AIAA R-101A-2005) provided as an example
-- **Data Delegate Interface** : a minimal contract for reading arrays
-  on demand from external files. Data Delegate implementations using this contract are format specific.
+**Expected outcome.** The intended result is a small, format-neutral scientific
+data vocabulary for OpenUSD and examples that can be tested against
+source-format adapters exposing solver-native data as native USD attributes.
+The exact schema names, property names, and governance model are intentionally
+left open for discussion. This proposal seeks alignment on the problem statement
+and separation of concerns first.
 
-## Problem Statement
+The diagram below captures that separation. Green elements are candidate
+data-model standardization areas. Yellow elements are vendor or domain
+implementation details. Blue elements are existing OpenUSD mechanisms. Gray
+elements are ecosystem consumers.
 
-CAE workflows span computational fluid dynamics, structural
-mechanics, electromagnetics, electronics design, climate modeling, and
-more.
-Each solver produces results in its own native format.
+![Architecture diagram showing scientific source data flowing through file-format adapters and lazy value providers into OpenUSD composition, native attributes, and a candidate scientific data vocabulary consumed by applications, analysis pipelines, visualization tools, and AI workflows.](architecture-diagram.svg)
 
-Many downstream workflows including visualization, post-processing, AI/ML
-training still require exporting or converting solver outputs into
-an "analysis ready" format (VTK, CSV, in-house variants) before data
-can be consumed.
-This creates several compounding problems:
+## Motivation
 
-- **Lost fidelity.**
-  Format conversion frequently degrades data.
-  Face centered fields may be averaged to cell or point data.
-  Mixed element topologies may be simplified.
-  Solver specific metadata is dropped.
+### Scientific data today
 
-- **Lost provenance.**
-  Converted artifacts become the de facto "truth," disconnected from
-  the solver output they derived from.
+Computer-aided engineering (CAE), computational fluid dynamics (CFD), finite
+element analysis (FEA), electronic design automation (EDA), climate modeling,
+reservoir simulation, particle simulation, and laboratory measurement workflows
+all produce large scientific datasets. These datasets usually originate in
+specialized source formats such as CGNS, EnSight, OpenFOAM, VTK, HDF5-based
+formats, reservoir formats, or proprietary solver outputs.
 
-- **Increased I/O and storage.**
-  Duplicate datasets, long export times, and transient intermediate
-  files multiply storage and transfer costs.
-  As simulation scale grows (larger meshes, more timesteps), full
-  copy convert pipelines become less tractable.
+The source files are often the authoritative record for details that downstream
+tools need:
 
-- **Algorithm and workflow lock-in.**
-  Every new format requires new readers, pipelines, and GPU kernels.
-  Pipelines and algorithms become coupled to a specific data model,
-  creating an N-by-M integration problem across solvers and tools.
+- mesh and element topology, including mixed or variable-size elements;
+- field association, such as node-, cell-, face-, or element-centered values;
+- time, iteration, ensemble, or operating-point organization;
+- solver-native identifiers, names, units, and boundary condition metadata;
+- provenance back to the simulation or measurement system that produced the
+  data.
 
-What is needed is a way to represent scientific datasets, their arrays,
-and a canonical interpretation contract in OpenUSD while keeping
-heavy numeric data external and solver native.
+Because the source formats are specialized, downstream applications often
+convert them into VTK, CSV, USD geometry, database tables, or private cache
+formats before analysis or visualization. That conversion can be useful for a
+specific workflow, but it does not provide a shared USD-level contract for
+scientific data.
 
-## Existing OpenUSD Mechanisms Considered
+The conversion-first pattern can cause recurring problems:
 
-OpenUSD provides strong primitives for geometry and volumes.
-We evaluated whether existing schema domains could address CAE data
-requirements without new types.
+- **Loss of fidelity.** Face-centered values may be averaged, mixed topology may
+  be flattened, solver names may be sanitized without a reversible mapping, and
+  source metadata may be dropped.
+- **Loss of provenance.** The converted artifact can become the operational
+  truth even though the solver-native result is the authoritative record.
+- **Increased I/O and storage.** Large simulations are copied into additional
+  representations, often only to support one consumer.
+- **Fragmented integrations.** Each consuming tool may need a different reader,
+  cache, or export pipeline, producing an N-by-M integration problem across
+  solvers and applications.
+- **Limited composition.** Simulation results, CAD, sensor streams, and
+  surrogate predictions may remain in parallel data systems instead of
+  composing as USD assets.
 
-- **UsdGeom.**
-  `UsdGeomMesh` and related types are designed for authored geometry
-  where mesh topology and point positions are stored as USD attributes.
-  Solver native meshes often use topologies that do not map 1:1 to
-  UsdGeom conventions: mixed element types, polyhedral cells,
-  face centered fields, and variable length connectivity arrays.
-  Representing these through UsdGeom would require the format
-  conversion step this proposal aims to avoid.
+### OpenUSD context
 
-- **UsdVol / FieldAsset.**
-  UsdVol defines `Volume` prims with `field:*` relationships to
-  field prims that point at external OpenVDB or Field3D assets.
-  This model is well suited to renderable volumetric fields (smoke,
-  fire) sampled on sparse or dense grids.
-  However, many CAE results include non volumetric arrays,
-  unstructured connectivity, element IDs, per face or per cell
-  attributes, that are not naturally representable as volume fields
-  without inventing new semantics or converting the data.
-  UsdVol's `FieldAsset` represents a single volume field; it does not
-  define semantics for variable length topology arrays or
-  mesh associated centering.
+OpenUSD can address the assembly side of this problem if scientific data is
+represented through USD concepts rather than through application side channels.
 
-These mechanisms are excellent for their designed purposes.
-CAE simulation data has requirements that fall outside their scope,
-including variable length connectivity, mixed topologies,
-cell/face/edge centering, and multi format provenance.
+In a USD-native workflow, a solver-native file can be opened, sublayered,
+referenced, or payloaded like any other USD asset. Its large numeric arrays are
+resolved lazily, so stage construction does not imply loading every field. Tools
+that understand the scientific data vocabulary can discover fields and their
+associations. Tools that do not understand the domain-specific details can still
+traverse the stage and preserve opinions through composition.
 
-## Proposal
+The proposed shift is from application-private import and delegate APIs to
+USD-native composition and value resolution. A file-format adapter may be the
+implementation mechanism, but the standardization target is the data model that
+appears in USD.
 
-We propose a small, format neutral set of OpenUSD schema types.
-The design is intentionally parallel to `UsdVol`: a container prim
-binds named fields via `field:*` namespace relationships, and each
-field references external data through asset paths.
-The generalization extends this pattern beyond renderable volumes to
-arbitrary scientific arrays with explicit centering metadata.
+## Problem statement
 
-The following diagram shows how the proposed components relate to
-solver native data on the left, and downstream ecosystem tooling on
-the right.
-Green components are standardization candidates (this proposal);
-yellow components are integrator specific; gray components are
-ecosystem consumers that benefit from the shared schema layer.
+### Two concerns to keep separate
 
-![Architecture diagram showing the relationship between standardization candidates (CaeDataSet, CaeFieldArray, data model API schemas, Data Delegate Interface), integrator specific pieces (FieldArray subtypes, native solver outputs, proprietary formats, vendor I/O libraries, Data Delegate Implementations), and ecosystem tooling (data importers, analysis/visualization libraries, AI/surrogate pipelines, CAE workflows).](architecture-diagram.png)
+Two related problems are often conflated:
 
-### CaeDataSet (Typed Prim)
+1. **Scientific data vocabulary.** USD needs a shared way to describe datasets,
+   fields, arrays, associations, time, and provenance so that scientific data is
+   discoverable and composable across tools.
+2. **Runtime data access implementation.** Applications and vendors need ways to
+   read heavy arrays from source files, defer I/O, cache values, select subsets,
+   and bind proprietary libraries.
 
-A container prim representing one scientific dataset.
-`CaeDataSet` anchors the canonical interpretation of its data (via
-applied API schemas) and binds named field arrays through `field:`
-namespace relationships.
+Both are necessary, but they operate at different layers. The first is a
+candidate for standardization. The second is implementation territory and should
+remain extensible.
 
-It is analogous to `UsdVolVolume`, but for general scientific data.
+This distinction matters because OpenUSD plugins are not the same thing as a
+vendor extensibility model. A vendor or domain extension should be defined at
+the data-model level: what concepts appear in USD, how they compose, and how
+they can mature from vendor-specific practice to multi-vendor convention. A
+runtime plugin is one way to deliver that behavior in a particular USD
+installation. The proposal should not require every scientific-data workflow to
+share one plugin architecture, one source repository, or one application stack.
 
-**Schema definition:**
+### Why this matters now
 
-```usda
-class CaeDataSet "CaeDataSet" (
-    inherits = </Typed>
-    doc = """A scientific dataset. A dataset is made up of any number
-             of CaeFieldArray primitives bound together in this dataset.
-             Each CaeFieldArray primitive is specified as a relationship
-             with namespace prefix 'field'."""
-)
-{
-}
-```
+Scientific USD integrations can be implemented as native USD file-format
+adapters rather than application-specific delegation or import pipelines. In
+that model, field arrays can become regular USD attribute values, large data can
+be loaded on demand, and solver-native files can participate directly in
+composition.
 
-`CaeDataSet` carries no attributes of its own.
-Interpretation is provided entirely by applied API schemas
-(see [Data Model API Schemas](#data-model-api-schemas) below).
+Without a shared data-model vocabulary, however, each adapter will expose a
+different shape:
 
-**Relationships:**
+- one reader may call a field `pressure`, another may store only the source
+  variable name `P`;
+- one reader may represent cell-centered data as a custom field, another as a
+  primvar-like property, and another as an application cache;
+- one reader may expose time samples as USD time, another may model timesteps as
+  children;
+- one vendor may encode source-format details in custom data while another
+  defines API schemas.
 
-| Relationship | Description |
+That would reproduce the same integration problem inside USD that exists
+outside it. The proposal therefore focuses first on the separation of concerns,
+then allows vendors and domains to incubate concrete mappings without blocking
+on a fully centralized standard.
+
+## Key questions
+
+### What is the minimum common vocabulary?
+
+Scientific formats differ substantially, but they repeatedly describe the same
+conceptual roles:
+
+| Concept | Purpose |
 |---|---|
-| `custom rel field:<name>` | Binds a named `CaeFieldArray` prim to this dataset. Follows the same `field:` namespace pattern used by `UsdVolVolume`. |
+| Dataset | A logical simulation, measurement, or derived result set that can be composed as an asset. |
+| Field | A named physical or computed quantity such as pressure, velocity, stress, temperature, density, or charge. |
+| Array | The typed numeric storage behind coordinates, connectivity, fields, ids, masks, or other tabular data. |
+| Association | The domain over which values are defined: node, cell, face, edge, element, particle, grid sample, global, etc. |
+| Topology | The structure that gives arrays spatial meaning: mesh connectivity, structured grid extents, particles, volumes, or domain-specific layouts. |
+| Time and ensembles | The coordinates that select snapshots, iterations, operating points, samples, or model variants. |
+| Provenance | The source file, source field name, source format concept, and optional resolver information needed for traceability. |
 
-### CaeFieldArray (Typed Prim)
+The open question is how much of this vocabulary must be common across all
+scientific data, and how much should be provided by domain extensions such as
+CFD, FEA, reservoir simulation, EDA, or geoscience.
 
-Represents an N-dimensional numeric array whose bulk data is stored
-outside USD.
-This is the base type for all field arrays.
-Format specific subtypes inherit from it and add locator attributes
-specific to their file format.
+### How should scientific files participate in composition?
 
-**Schema definition:**
+USD already has mechanisms for file formats, references, payloads, sublayers,
+asset resolution, and value resolution. A scientific source file can
+therefore appear in a stage as a layer provided by a registered file-format
+adapter. The adapter can author a structural layer and provide lazy array values
+through USD attribute resolution.
 
-```usda
-class CaeFieldArray "CaeFieldArray" (
-    inherits = </Typed>
-    doc = """An N-dimensional numeric array whose bulk data is stored
-             outside USD and referenced by asset paths."""
-)
-{
-    asset[] fileNames = [] (
-        doc = """Specifies the assets for the files. When multiple
-                 assets are specified they are treated as spatial
-                 partitions of the same dataset. Temporal partitions
-                 may be specified by animating this attribute using
-                 time codes."""
-    )
+This proposal does not require that all implementations use the same internal
+mechanism. `SdfFileFormat` and `SdfAbstractData` are one testable path for
+large, read-only scientific arrays, but the data model should not depend on one
+implementation detail. The composed USD view is the contract.
 
-    uniform token fieldAssociation = "none" (
-        allowedTokens = ["none", "vertex", "cell"]
-        doc = """Specifies the dataset element this field array is
-                 associated with."""
-    )
-}
-```
+### How should vendor and domain extensions mature?
 
-**Attributes:**
+Scientific data is too broad for a single first proposal to standardize every
+domain-specific field, topology, and source-format mapping. The mechanism needs
+to support a staged path:
 
-| Attribute | Type | Default | Description |
-|---|---|---|---|
-| `fileNames` | `asset[]` | `[]` | External file references. Multiple assets represent spatial partitions. Time varying data is expressed via `fileNames.timeSamples`. |
-| `fieldAssociation` | `uniform token` | `"none"` | Where data is associated: `"none"`, `"vertex"`, or `"cell"`. Extensible in future proposals to `"faceCenter"`, `"edgeCenter"`, etc. |
+- vendors and projects can ship domain-specific schemas or metadata
+  conventions without central approval;
+- successful patterns can converge into multi-vendor conventions;
+- stable, broadly exercised concepts can become candidates for OpenUSD or AOUSD
+  standardization.
 
-**Design rationale.**
-`CaeFieldArray` is intentionally analogous to
-`UsdVolFieldAsset.filePath` but generalized:
+This proposal assumes an incubation path: independent implementation first,
+promotion after demonstrated interoperability. The important point for OpenUSD
+is that the extension is a data-model commitment, not merely the existence of a
+runtime plugin.
 
-- Supports arrays of any rank and type, not just scalar volume fields.
-- Supports variable length data (connectivity, offsets).
-- The `fieldAssociation` attribute makes centering explicit, a
-  critical concept in CAE that has no equivalent in UsdVol.
-- The `asset[]` array type allows multiple files to represent
-  spatial partitions of the same dataset.
-- The `uniform` qualifier on `fieldAssociation` declares that
-  centering does not vary over time.
+## Existing OpenUSD mechanisms
 
-### Format-Specific Subtypes: CaeCgnsFieldArray
+### UsdGeom
 
-Format specific subtypes of `CaeFieldArray` add the attributes needed
-to locate data within a particular file format.
-This proposal includes one such example:
-**CGNS** (CFD General Notation System).
+`UsdGeomMesh`, `UsdGeomPointBased`, `UsdGeomPoints`, primvars, and related
+schemas are appropriate when data is being represented as renderable or
+scene-editable geometry. They are not a universal scientific data contract.
 
-CGNS is chosen because:
+Many solver-native datasets include mixed element types, polyhedral cells,
+variable-length connectivity arrays, face-centered fields, ghost cells,
+partitioning, or solver-specific boundary-condition concepts that do not map
+1:1 to `UsdGeomMesh` without conversion. Converting everything to `UsdGeom`
+also makes it difficult to preserve the source file as the authoritative
+record.
 
-- It is a widely adopted standard (AIAA Recommended Practice) with
-  broad support across CFD solvers
-  (Fluent, STAR-CCM+, OpenFOAM via converters).
-- Its hierarchical database structure provides a natural fit for
-  demonstrating the locator attribute pattern.
+`UsdGeom` should remain the right target when a faithful geometric
+representation is needed. Scientific data schemas should complement it rather
+than replace it.
 
-Other format subtypes (e.g., VTK, HDF5, EnSight) follow the same
-extension pattern and can be created by any implementor.
+### UsdVol
 
-**Schema definition:**
+`UsdVol` already provides an important precedent: a container prim binds named
+fields, and field assets can refer to external data such as OpenVDB. That
+pattern is directly relevant to scientific data.
 
-```usda
-class CaeCgnsFieldArray "CaeCgnsFieldArray" (
-    inherits = </CaeFieldArray>
-    doc = "A CGNS data array."
-)
-{
-    string fieldPath = "" (
-        doc = """Specifies the path to the node in the CGNS
-                 database."""
-    )
-}
-```
+However, `UsdVol` is oriented around renderable volumetric fields. Scientific
+datasets also need non-volume arrays, mesh connectivity, element association,
+particle or tabular data, source-format metadata, and domain-specific topology.
+Overloading `UsdVol` for all of these concepts would blur the boundary between
+rendering-oriented volume data and general scientific data.
 
-**Additional attributes (beyond CaeFieldArray):**
+### SdfFileFormat and SdfAbstractData
 
-| Attribute | Type | Default | Description |
-|---|---|---|---|
-| `fieldPath` | `string` | `""` | Path to the data node within the CGNS hierarchical database (e.g., `"/Base/Zone/GridCoordinates/CoordinateX"`). |
+OpenUSD file-format plugins can present non-USD files as USD layers.
+`SdfAbstractData` gives an implementation path for backing resolved USD
+attribute values with custom storage and lazy reads. Together, these mechanisms
+allow a source-format adapter to expose heavy scientific arrays as standard USD
+attribute values without eagerly converting or copying the whole file.
 
-**Extension pattern.**
-Any file format can be supported by creating a subtype of
-`CaeFieldArray` and adding format specific locator attributes.
-For example, a hypothetical VTK subtype might add an `arrayName`
-attribute; an HDF5 subtype might add a `datasetPath` attribute.
-The base `CaeFieldArray` attributes (`fileNames`,
-`fieldAssociation`) are inherited by all subtypes.
+That is an implementation direction that can be evaluated in prototypes. It
+should be described as an implementation mechanism, not as the standardization
+target itself. The standardization target is the shape and meaning of the USD
+data that appears after the adapter participates in composition.
 
-### Data Model API Schemas
+A useful prototype pattern is a lightweight structure layer plus a lazy-value
+layer that contributes array values through USD value resolution. That pattern
+also makes one discovery constraint visible: consumers should not assume that
+every large value appears in authored-property enumeration. Field and array
+descriptors need to provide the discoverable contract, while value attributes
+remain retrievable through normal USD attribute APIs.
 
-Data model API schemas are single apply schemas applied to a
-`CaeDataSet` to define how its field arrays should be interpreted.
-They are model specific, not format specific. For example, datasets
-from different file formats can share the same data model API if
-their underlying structure is the same.
+### customData and ad-hoc metadata
 
-Multiple data model APIs can compose on a single `CaeDataSet` prim.
+`customData` can carry arbitrary metadata, including source names, field
+association, units, or file paths. It is useful for private workflows, but it
+does not provide a discoverable or interoperable scientific data contract.
+Consumers must already know each producer's keys and conventions.
 
-#### CaePointCloudAPI
+The scientific data vocabulary should avoid turning `customData` into the
+primary interoperability mechanism, while still allowing custom data for
+implementation-specific annotations and early incubation.
 
-Defines a dataset that represents a point cloud, a set of spatial
-coordinates without connectivity.
+## Industry use cases
 
-```usda
-class "CaePointCloudAPI" (
-    inherits = </APISchemaBase>
-    doc = "Defines a dataset that represents a point cloud."
-    customData = {
-        token apiSchemaType = "singleApply"
-    }
-)
-{
-    rel cae:pointCloud:coordinates (
-        doc = """Specifies the CaeFieldArray(s) to interpret as
-                 spatial coordinates. Multiple targets may be
-                 specified when individual components are split
-                 among multiple field arrays."""
-    )
-}
-```
+### CAE, CFD, and FEA
 
-| Relationship | Description |
-|---|---|
-| `cae:pointCloud:coordinates` | Target `CaeFieldArray` prim(s) providing spatial coordinate data. Multiple targets support component split arrays (e.g., separate X, Y, Z arrays as is common in CGNS). |
+CAE workflows need to combine solver-native meshes, field results, CAD context,
+test data, and derived quantities. A CFD stage may need to expose velocity,
+pressure, temperature, turbulence quantities, cell zones, boundary patches, and
+time-varying snapshots. An FEA stage may need stresses, strains, displacement,
+modal data, contact regions, and element sets.
 
-#### CaeMeshAPI
+The common requirement is not one fixed topology. The common requirement is a
+USD-visible contract for discovering fields, understanding where values are
+defined, and composing the result with the rest of the digital product context.
 
-Defines a dataset that represents a surface or volume mesh.
+### Electronics, EDA, and multiphysics
 
-```usda
-class "CaeMeshAPI" (
-    inherits = </APISchemaBase>
-    doc = "Defines a dataset that represents a surface mesh."
-    customData = {
-        token apiSchemaType = "singleApply"
-    }
-)
-{
-    rel cae:mesh:points (
-        doc = """Specifies the CaeFieldArray to treat as the mesh
-                 points."""
-    )
+Electronics and semiconductor workflows can combine thermal,
+electromagnetic, mechanical, and manufacturing data. Field data may be tied to
+package geometry, board layouts, component identifiers, or extracted simulation
+regions. These datasets often need source-system traceability and composition
+with product structure, not just visualization.
 
-    rel cae:mesh:faceVertexIndices (
-        doc = """Specifies the CaeFieldArray to treat as face vertex
-                 indices."""
-    )
+The vendor extensibility problem is visible here: specialized formats and
+proprietary libraries need a way to participate without forcing their private
+details into the core vocabulary.
 
-    rel cae:mesh:faceVertexCounts (
-        doc = """Specifies the CaeFieldArray to treat as face vertex
-                 counts."""
-    )
-}
-```
+### Energy, geoscience, and environment
 
-| Relationship | Description |
-|---|---|
-| `cae:mesh:points` | Target `CaeFieldArray` providing mesh point positions. |
-| `cae:mesh:faceVertexIndices` | Target `CaeFieldArray` providing face-vertex connectivity indices. |
-| `cae:mesh:faceVertexCounts` | Target `CaeFieldArray` providing the number of vertices per face. |
+Reservoir, weather, climate, and geoscience datasets often use structured,
+curvilinear, corner-point, or adaptive grids. They include time series, ensemble
+members, uncertainty, cell properties, masks, and domain conventions that do not
+look like traditional renderable geometry.
 
-#### CaeDenseVolumeAPI
+A scientific data vocabulary should provide enough common structure for
+composition and discovery while allowing domain-specific topology APIs to carry
+the details.
 
-Defines a dataset that represents a dense (structured) volume on a
-regular grid.
+### AI, surrogates, and digital twins
 
-```usda
-class "CaeDenseVolumeAPI" (
-    inherits = </APISchemaBase>
-    doc = "Defines a dataset that represents a dense volume."
-    customData = {
-        token apiSchemaType = "singleApply"
-    }
-)
-{
-    uniform int3 cae:denseVolume:minExtent (
-        doc = """Specifies the minimum structured (IJK) extent for
-                 the volume."""
-    )
+Surrogate models and engineering workflows may need to compare predictions with
+source simulation or measurement data. USD composition can place CAD, ground
+truth, surrogate output, deltas, and annotations in one stage. That comparison
+is easier to automate when those datasets expose fields through a common
+scientific data contract rather than through application-private readers.
 
-    uniform int3 cae:denseVolume:maxExtent (
-        doc = """Specifies the maximum structured (IJK) extent for
-                 the volume."""
-    )
+## Design considerations
 
-    uniform float3 cae:denseVolume:spacing = (1.0, 1.0, 1.0) (
-        doc = "Specifies the spacing along each axis."
-    )
-}
-```
+### Principles
 
-| Attribute | Type | Default | Description |
-|---|---|---|---|
-| `cae:denseVolume:minExtent` | `uniform int3` | | Minimum structured (IJK) extent for the volume. |
-| `cae:denseVolume:maxExtent` | `uniform int3` | | Maximum structured (IJK) extent for the volume. |
-| `cae:denseVolume:spacing` | `uniform float3` | `(1.0, 1.0, 1.0)` | Grid spacing along each axis. |
+1. **Separation of concerns.** The scientific data model and the runtime data
+   access mechanism should remain distinct. Standardization should focus on the
+   composed USD data contract.
 
-### Data Delegate Interface (Informational)
+2. **USD-native composition.** Scientific source files should be able to
+   participate through ordinary USD mechanisms such as sublayers, references,
+   payloads, asset resolution, and time samples.
 
-A data delegate is the runtime component that reads bulk numeric data
-on demand from external files.
-Given a `CaeFieldArray` prim, a delegate resolves `fileNames` plus
-any format specific attributes and returns a typed buffer.
+3. **Native attribute access.** When a field value is visible in USD, consumers
+   should access it as a USD attribute value rather than through an
+   application-private side channel.
 
-Key design points:
+4. **Layered schema composition.** Common scientific concepts should remain
+   separable from domain- and format-specific concepts. Applied API schemas are
+   one candidate mechanism: a source-format adapter could expose shared
+   dataset, field, and array descriptors while preserving CGNS, VTK, reservoir,
+   EDA, or vendor-specific metadata on the same prims.
 
-- **Lazy, pull-based.**
-  Data is read only when requested by a consuming algorithm.
-  No bulk preloading is required.
-- **Format specific plugins.**
-  One delegate implementation per file format (e.g., a CGNS delegate,
-  a VTK delegate).
-  This is analogous to how UsdVol relies on external libraries
-  (OpenVDB, Field3D) to read data from referenced assets.
-- **Not a schema.**
-  The delegate interface is a plugin contract, not a USD schema type.
-  Implementations remain outside the standard.
+5. **Lazy and scalable by design.** Opening a stage should not require loading
+   every numeric array. Implementations need to be free to defer reads, cache
+   selectively, and use source-format libraries.
 
-## Examples
+6. **Source fidelity.** The data model should preserve source names,
+   associations, topology meaning, and provenance needed for traceability or
+   audit workflows, even when a consumer also derives renderable geometry.
 
-The following examples demonstrate the proposed schemas in practice.
-Complete `.usda` files are provided in the
-[`examples/`](examples/) directory.
+7. **Vendor and domain extensibility.** Vendors, standards bodies, and domains
+   need a way to define extensions without waiting for a core standard. Those
+   extensions should have a path to converge when interoperability is proven.
 
-### Example 1: Unstructured CFD Mesh (CGNS)
+8. **Minimal disruption.** The design should complement `UsdGeom`, `UsdVol`,
+   asset resolution, and file-format plugins. It should not require fundamental
+   changes to namespace, composition, or value resolution semantics.
 
-An unstructured CFD simulation stores its mesh and solution fields in
-a CGNS file.
-The `CaeDataSet` applies `CaePointCloudAPI` to define the spatial
-coordinates and binds pressure, velocity, and temperature as named
-fields.
-All bulk data remains in the solver native `.cgns` file.
+9. **Application neutrality.** The proposal must not depend on Kit, Omniverse,
+   or any one application. A compliant scientific-data representation should be
+   useful to any OpenUSD-based consumer that loads the relevant schemas and file
+   format adapters.
+
+### Likely direction
+
+The emerging implementation direction is to expose scientific source files as
+USD layers through file-format adapters. Those adapters can author a lightweight
+stage structure and provide heavy arrays as lazily resolved USD attribute
+values. A small set of scientific schemas or schema-like conventions can then
+describe the arrays and fields in a way that downstream tools can discover.
+
+A minimal vocabulary likely needs:
+
+- a dataset anchor;
+- a way to describe named fields;
+- a way to describe named arrays and their value attributes;
+- association metadata for where values live;
+- relationships or properties that describe topology and source provenance;
+- time and subset-selection conventions that compose cleanly;
+- typed controls for source-format selection, time mapping, cache policy, or
+  streaming hints where those controls affect composition or value access.
+
+Applied API schemas, including multiple-apply APIs for repeated field and array
+descriptors, are one candidate because they are discoverable, typed, and fit
+USD's existing schema model. The proposal should not prematurely standardize
+current incubating names or every property shape. The first decision is the
+separation of concerns and the conceptual contract.
+
+### Evaluation criteria
+
+A proposed scientific data vocabulary should be evaluated against concrete
+scenarios:
+
+1. **Direct composition.** A source scientific file can be opened or composed as
+   a USD layer, reference, or payload without first exporting all field data to a
+   separate USD geometry cache.
+
+2. **Attribute access.** A consumer can discover a field and retrieve its values
+   through normal USD attribute APIs. An implementation may load the values
+   lazily, and field discovery should not rely only on enumerating authored
+   heavy-value attributes, but the access path remains USD-native.
+
+3. **Association clarity.** A consumer can determine whether values are defined
+   on nodes, cells, faces, elements, particles, grid samples, or another
+   declared domain-specific association.
+
+4. **Source fidelity.** A consumer can identify the source file and source field
+   name for a USD-visible field, and can distinguish source-format metadata from
+   format-neutral scientific concepts.
+
+5. **Composition behavior.** Scientific datasets can compose with CAD,
+   surrogate predictions, annotations, and stronger-layer opinions without
+   requiring application-private state.
+
+6. **Implementation neutrality.** The same USD-visible contract can be produced
+   by more than one source-format adapter or application.
+
+### Open questions for discussion
+
+1. **Vocabulary boundary.** Which concepts belong in a common scientific core,
+   and which should be left to domain extensions?
+
+2. **Schema mechanism.** Should field and array descriptors be applied schemas,
+   typed prims, metadata dictionaries with accessor APIs, or a hybrid?
+
+3. **Topology representation.** How should the common vocabulary reference
+   topology without forcing all domains into one mesh model?
+
+4. **Field association.** What is the initial token set for association, and how
+   should domain-specific associations extend it?
+
+5. **Units and physical meaning.** Should units, dimensions, and quantity kinds
+   be part of the first proposal, or should they be layered as a follow-up?
+
+6. **Discovery and indexing.** How can consumers find datasets and fields in a
+   large composed stage without requiring full-stage traversal in every
+   workflow?
+
+7. **File-format arguments.** Which source-format controls should be
+   represented as typed USD-authored properties, and which should remain private
+   file-format arguments?
+
+8. **Layer rooting and relocation.** What conventions should source-format
+   layers use for default prims, payload composition, and sublayer relocation
+   into an existing stage?
+
+9. **Subset selection.** How should source-format subset controls such as base,
+   zone, part, timestep, ensemble member, or variable selection be represented
+   when the source file is referenced or payloaded?
+
+10. **Extension governance.** What naming and maturity conventions allow vendors
+   to ship extensions while keeping a path toward multi-vendor convergence?
+
+## Illustrative encoding
+
+The examples in this section are intentionally non-normative. They show the
+kind of USD view that a scientific source-format adapter could provide. Names
+such as `ScientificDataset` and `ScientificFieldAPI` are placeholders for
+discussion, not proposed final schema names.
+
+### Direct composition of a source file
+
+If a file-format adapter for CGNS is registered, a solver-native file can
+participate directly as a USD layer:
 
 ```usda
 #usda 1.0
 (
     defaultPrim = "World"
+    subLayers = [
+        @./simulation_results.cgns@
+    ]
 )
 
 def Xform "World"
 {
-    def CaeDataSet "FluidDomain" (
-        prepend apiSchemas = ["CaePointCloudAPI"]
-    )
-    {
-        # Spatial coordinates via CaePointCloudAPI
-        rel cae:pointCloud:coordinates = [
-            </World/FluidDomain/GridCoordinatesX>,
-            </World/FluidDomain/GridCoordinatesY>,
-            </World/FluidDomain/GridCoordinatesZ>
-        ]
-
-        # Named field relationships
-        custom rel field:pressure = </World/FluidDomain/Pressure>
-        custom rel field:velocity = </World/FluidDomain/Velocity>
-        custom rel field:temperature = </World/FluidDomain/Temperature>
-        custom rel field:elementConnectivity = </World/FluidDomain/ElementConnectivity>
-        custom rel field:elementStartOffset = </World/FluidDomain/ElementStartOffset>
-
-        # --- CGNS field arrays (bulk data in solver native .cgns file) ---
-
-        def CaeCgnsFieldArray "GridCoordinatesX"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateX"
-            uniform token fieldAssociation = "vertex"
-        }
-
-        def CaeCgnsFieldArray "GridCoordinatesY"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateY"
-            uniform token fieldAssociation = "vertex"
-        }
-
-        def CaeCgnsFieldArray "GridCoordinatesZ"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateZ"
-            uniform token fieldAssociation = "vertex"
-        }
-
-        def CaeCgnsFieldArray "ElementConnectivity"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/Elements/ElementConnectivity"
-            uniform token fieldAssociation = "none"
-        }
-
-        def CaeCgnsFieldArray "ElementStartOffset"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/Elements/ElementStartOffset"
-            uniform token fieldAssociation = "none"
-        }
-
-        def CaeCgnsFieldArray "Pressure"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/FlowSolution/Pressure"
-            uniform token fieldAssociation = "cell"
-        }
-
-        def CaeCgnsFieldArray "Velocity"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/FlowSolution/Velocity"
-            uniform token fieldAssociation = "cell"
-        }
-
-        def CaeCgnsFieldArray "Temperature"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/FlowSolution/Temperature"
-            uniform token fieldAssociation = "cell"
-        }
-    }
 }
 ```
 
-CGNS stores coordinates as separate per-axis arrays.
-The `cae:pointCloud:coordinates` relationship targets all three.
+The source file remains the source of truth. The adapter determines the USD
+stage structure and exposes arrays through USD value resolution. This example
+does not prescribe the source layer's default prim or how a host stage relocates
+source data under an existing namespace; that convention needs to be decided
+explicitly.
 
-### Example 2: Time Varying Simulation
+### Expanded scientific dataset view
 
-A transient analysis produces results at multiple timesteps.
-USD's `timeSamples` expresses the temporal dimension using the same
-pattern used throughout USD for animated data.
+A consumer that opens the composed stage should see a dataset and field
+descriptors through USD, with heavy values available as attributes:
 
 ```usda
-#usda 1.0
-(
-    defaultPrim = "World"
+def ScientificDataset "FluidDomain" (
+    prepend apiSchemas = [
+        "ScientificFieldAPI:pressure",
+        "ScientificArrayAPI:pressure",
+        "ScientificFieldAPI:velocity",
+        "ScientificArrayAPI:velocity"
+    ]
 )
-
-def Xform "World"
 {
-    def CaeDataSet "TransientAnalysis" (
-        prepend apiSchemas = ["CaePointCloudAPI"]
-    )
-    {
-        rel cae:pointCloud:coordinates = </World/TransientAnalysis/Points>
-        custom rel field:displacement = </World/TransientAnalysis/Displacement>
+    asset scientific:source:file = @./simulation_results.cgns@
 
-        def CaeCgnsFieldArray "Points"
-        {
-            asset[] fileNames = [@./results_t000.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/Coordinates"
-            uniform token fieldAssociation = "vertex"
-        }
+    uniform string scientific:field:pressure:name = "Pressure"
+    uniform token scientific:field:pressure:association = "cell"
+    custom float[] scientific:array:pressure:value
 
-        def CaeCgnsFieldArray "Displacement"
-        {
-            # Time varying: different files per timestep
-            asset[] fileNames.timeSamples = {
-                0:   [@./results_t000.cgns@],
-                10:  [@./results_t010.cgns@],
-                20:  [@./results_t020.cgns@],
-                30:  [@./results_t030.cgns@],
-            }
-            string fieldPath = "/Base/Zone/FlowSolution/Displacement"
-            uniform token fieldAssociation = "vertex"
-        }
-    }
+    uniform string scientific:field:velocity:name = "Velocity"
+    uniform token scientific:field:velocity:association = "cell"
+    custom float3[] scientific:array:velocity:value
 }
 ```
 
-The `fileNames` attribute is animated with `timeSamples`, producing a
-different file reference at each time code.
-The mesh (points) remains static while the displacement field varies
-over time.
-A data delegate resolves the correct file for each requested time.
+The important point is that `scientific:array:*:value` is a USD attribute. A
+lazy implementation may provide the value from an `SdfAbstractData`-backed
+layer, but the consumer still calls the normal USD attribute API.
 
-### Example 3: Composition of Simulation, CAD, and AI in One Stage
+### Composition with CAD and surrogate output
 
-USD's composition operators (sublayers, references, payloads) allow
-nondestructive assembly of data from multiple sources.
-This example shows a digital twin stage that composes CAD geometry,
-solver results, and AI surrogate predictions, each authored
-independently and retaining its own source of truth.
+Scientific data should compose with other USD assets instead of living in a
+parallel application data model:
 
 ```usda
 #usda 1.0
 (
     defaultPrim = "DigitalTwin"
     subLayers = [
-        @./cad_geometry.usd@,
-        @./simulation_results.usd@,
-        @./ai_surrogate_fields.usd@
+        @./cad_geometry.usd@
     ]
 )
 
 def Xform "DigitalTwin"
 {
-    # CAD geometry from engineering (UsdGeom in the cad layer)
     def "Geometry" (
-        references = </CADModel/Body>
+        prepend references = @./cad_geometry.usd@</CADModel/Body>
     )
     {
     }
 
-    # Solver results (CaeDataSet from the simulation layer)
-    def "SimulationResults" (
-        references = </World/FluidDomain>
+    def "MeasuredOrSolvedResult" (
+        prepend payload = @./simulation_results.cgns@
     )
     {
     }
 
-    # AI surrogate predictions (same CaeDataSet schema contract)
     def "SurrogatePrediction" (
-        references = </Surrogate/PredictedFlow>
+        prepend payload = @./surrogate_prediction.npz@
     )
     {
     }
 }
 ```
 
-All three data sources compose into a single stage with no format
-conversion. Consumers access solver results and surrogate predictions
-through the same `CaeDataSet` interface.
+Ground truth, surrogate predictions, deltas, and annotations can then be
+assembled using normal USD composition arcs.
 
-## Relationship to Existing USD Work
+Complete illustrative files are provided in the [`examples/`](examples/)
+directory.
 
-### UsdVol Analogy
+## Relationship to implementation work
 
-`CaeFieldArray` is intentionally parallel to `UsdVolFieldAsset`.
-Both point to external data files through asset paths.
-Both are bound to a container prim through `field:*` namespace
-relationships.
-`CaeFieldArray` generalizes this pattern beyond renderable volumes
-to arbitrary scientific arrays with explicit centering metadata.
+NVIDIA is incubating this direction in a separate CAE USD Plugins repository.
+That work contains format-agnostic scientific schemas, domain and source-format
+API schemas, and `SdfFileFormat` adapters for CAE and scientific data. Kit-CAE
+can depend on those plugins in a future release, while remaining an application
+that provides visualization, workflows, and derived views on top of the
+USD-visible contract.
 
-### UsdGeom
+The implementation direction includes:
 
-`CaeDataSet` does **not** replace `UsdGeomMesh`.
-When a solver's mesh can be faithfully represented as a
-`UsdGeomMesh`, that remains the appropriate choice.
-`CaeDataSet` serves cases where solver native topology does not map
-1:1 to UsdGeom conventions (mixed elements, polyhedra,
-face centered fields, variable length connectivity) or where
-preserving the solver native file as source of truth is required.
+- format-agnostic scientific dataset, field, and array schemas;
+- per-format API schemas for concepts such as CGNS zones, flow solutions, and
+  unstructured element sections;
+- `SdfFileFormat` adapters for source formats;
+- lazy array value resolution so heavy data appears as USD attributes without
+  eager conversion;
+- typed controls for source-format arguments where useful for payload,
+  sublayer, and UI workflows.
 
-## Risks and Mitigations
+Existing Kit-CAE delegate and importer workflows are relevant migration
+context, but they are not the intended standardization target. This work is
+useful as a reference implementation and proving ground. The proposal should
+standardize composed USD concepts only after they have been validated across
+formats, partners, and applications.
 
-| Risk | Mitigation |
-|---|---|
-| Scope creep into visualization/rendering | This proposal covers data representation and access only. Visualization is left to consuming applications. |
-| Overlap with UsdVol | `CaeFieldArray` extends the `FieldAsset` pattern to scientific arrays. The two serve different domains. |
+## Risks
 
-## Alternate Approaches Considered
+1. **Plugin/standard conflation.** If the proposal is read as standardizing one
+   plugin stack, it will be too narrow and will not serve the broader OpenUSD
+   ecosystem. The proposal needs to keep implementation mechanics separate from
+   the data model.
 
-1. **Extend UsdVol/FieldAsset.**
-   Extending UsdVol for general CAE arrays would still require
-   defining dataset, array, and interpretation vocabulary.
-   Doing so would overload a rendering oriented schema domain with
-   non rendering semantics, creating confusion about which fields are
-   renderable volumes and which are scientific data.
-   A separate domain makes the boundary clear.
+2. **Premature schema lock-in.** Standardizing names and properties before
+   enough formats have exercised them may force later incompatible revisions.
+   The first phase should focus on common concepts and open questions.
 
-2. **Use UsdGeom + primvars for everything.**
-   This forces mesh conversion into USD attributes, losing fidelity
-   for complex topologies and creating the exact data conversion
-   problem this proposal aims to solve.
+3. **Scope creep.** Scientific data touches visualization, units, validation,
+   analytics, solver control, provenance, and AI workflows. The core proposal
+   should not try to solve all of those at once.
 
-3. **External only approach (no USD schemas).**
-   Without USD schemas, tools lose composition, provenance, and
-   ecosystem benefits.
-   Each tool would still need N-by-M format integrations,
-   which is what we are looking to avoid.
+4. **Performance expectations.** Lazy attributes make source data accessible
+   through USD, but they do not guarantee every access pattern is efficient.
+   Consumers still need domain-aware algorithms, caching strategies, and
+   indexing.
 
-## Out of Scope
+5. **Extension fragmentation.** If vendor and domain extensions have no naming
+   or maturity guidance, the ecosystem may still fragment into incompatible
+   conventions.
 
-The following topics are explicitly outside the scope of this proposal.
-Each may be addressed in future work.
+6. **Migration ambiguity.** During transition, plugin-backed layers and legacy
+   delegate or importer stages may coexist. The proposal should keep the
+   USD-visible contract independent of either migration path.
 
-- **Visualization and rendering schemas.**
-  How to render CAE data (colormaps, streamlines, volume rendering)
-  is application specific and not part of this proposal.
+## Alternate approaches
 
-- **Solver specific data models.**
-  This proposal defines a neutral vocabulary.
-  Format specific subtypes follow the same extension pattern
-  demonstrated by `CaeCgnsFieldArray` and can be created by any
-  implementor for their format of choice.
+1. **Application delegate APIs.** A delegate can provide efficient data access
+   inside one application, but it makes arrays invisible to standard USD
+   attribute resolution and ties workflows to that application stack. This is
+   the approach this revision moves away from.
 
-- **Data transport protocols.**
-  How data moves between solver and consumer (file I/O, gRPC, shared
-  memory) is an implementation concern.
-  The schemas describe what data exists and how to interpret it, not
-  how to move it.
+2. **Importer/exporter conversion.** Importing scientific files into USD
+   geometry or cache formats can be useful for specific workflows, but it
+   duplicates data and can lose source fidelity. It should remain an option,
+   not the interoperability contract.
 
-- **Write-back and simulation control.**
-  This proposal addresses read access and composition of results.
-  Bidirectional workflows (USD to solver) are future work.
+3. **Use `UsdGeom` for all data.** `UsdGeom` is appropriate for renderable or
+   editable geometry, but it does not cover all scientific topology and field
+   semantics without conversion.
 
-## Backward Compatibility
+4. **Use `UsdVol` for all fields.** `UsdVol` provides an important precedent
+   for external fields, but it is not intended to describe arbitrary scientific
+   arrays, mesh topology, particles, or solver metadata.
 
-All proposed types are **new** schema additions.
-No existing USD types, attributes, or behaviors are modified.
-Stages that do not use CAE schemas are unaffected.
+5. **Standardize every source format mapping immediately.** This would be too
+   broad. Format mappings should incubate as vendor or domain extensions and
+   converge as real interoperability needs emerge.
 
-A stage containing `CaeDataSet` or `CaeFieldArray` prims will load
-in any USD runtime as unrecognized typed prims.
-Their attributes and relationships remain accessible through generic
-USD APIs.
-Full semantic interpretation requires the CAE schema library to be
-registered.
+## Out of scope
 
-## Reference Implementation
+- Visualization controls such as colormaps, streamlines, slicing, glyphs, and
+  rendering policies.
+- Solver write-back, simulation control, and generating solver input from USD.
+- A single mandated runtime plugin architecture or source repository.
+- Complete mappings for every scientific source format.
+- Standardizing NVIDIA, Kit-CAE, or Omniverse implementation details.
+- Replacing `UsdGeom`, `UsdVol`, or domain-specific schemas that already solve
+  narrower problems well.
 
-A public reference implementation demonstrating the proposed schemas,
-multiple format delegates, and mixed dataset composition exists:
+## Next steps
 
-- **Kit-CAE**
-  ([GitHub](https://github.com/NVIDIA-Omniverse/kit-cae)):
-  Implements the proposed schema types, data delegates for CGNS, VTK,
-  HDF5, and other formats, and demonstrates cross format composition
-  across CFD, structural, climate, and other scientific data.
+1. Align with OpenUSD and AOUSD reviewers on the problem statement and the
+   separation between scientific data vocabulary and runtime implementation.
 
-- **Digital Twins for Fluid Simulation**
-  ([GitHub](https://github.com/NVIDIA-Omniverse-blueprints/digital-twins-for-fluid-simulation)):
-  A reference workflow for real time digital twins using Kit-CAE
-  schemas with AI surrogate models for external aerodynamic CFD.
+2. Gather concrete use cases from CAE partners and adjacent scientific domains
+   to validate the minimum common vocabulary.
+
+3. Compare schema mechanisms for field and array descriptors, with special
+   attention to discoverability, composition behavior, GUI presentation,
+   validation, and extension maturity.
+
+4. Use reference plugins and partner datasets to test whether source-format
+   adapters can expose native USD attributes consistently across formats.
+
+5. Draft a follow-up solution proposal that specifies concrete schema names,
+   property names, composition behavior, and extension governance after the
+   conceptual boundary has consensus.

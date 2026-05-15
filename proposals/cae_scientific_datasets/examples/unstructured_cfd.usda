@@ -1,91 +1,57 @@
 #usda 1.0
 (
-    doc = """Example: Unstructured CFD mesh with solution fields.
+    doc = """Illustrative, non-normative example: an expanded USD view of an
+    unstructured CFD result exposed by a scientific source-file adapter.
 
-    Demonstrates CaeDataSet with CaePointCloudAPI applied, using
-    CaeCgnsFieldArray prims to reference data in a solver native
-    CGNS file. Bulk numeric data remains in the .cgns file and is
-    read on demand by a data delegate."""
+    Schema and property names in this file are placeholders for discussion.
+    The important behavior is that field values are regular USD attributes,
+    even when an implementation resolves them lazily from a solver-native file."""
     defaultPrim = "World"
 )
 
 def Xform "World"
 {
-    def CaeDataSet "FluidDomain" (
-        prepend apiSchemas = ["CaePointCloudAPI"]
+    def ScientificDataset "FluidDomain" (
+        prepend apiSchemas = [
+            "ScientificMeshAPI",
+            "ScientificFieldAPI:pressure",
+            "ScientificArrayAPI:pressure",
+            "ScientificFieldAPI:velocity",
+            "ScientificArrayAPI:velocity",
+            "ScientificFieldAPI:temperature",
+            "ScientificArrayAPI:temperature",
+            "ScientificArrayAPI:points",
+            "ScientificArrayAPI:elementConnectivity",
+            "ScientificArrayAPI:elementStartOffset"
+        ]
     )
     {
-        # Spatial coordinates via CaePointCloudAPI
-        # (split into X, Y, Z per CGNS storage convention)
-        rel cae:pointCloud:coordinates = [
-            </World/FluidDomain/GridCoordinatesX>,
-            </World/FluidDomain/GridCoordinatesY>,
-            </World/FluidDomain/GridCoordinatesZ>
-        ]
+        asset scientific:source:file = @./simulation_results.cgns@
+        uniform token scientific:topology:kind = "unstructuredMesh"
 
-        # Named field relationships
-        custom rel field:pressure = </World/FluidDomain/Pressure>
-        custom rel field:velocity = </World/FluidDomain/Velocity>
-        custom rel field:temperature = </World/FluidDomain/Temperature>
-        custom rel field:elementConnectivity = </World/FluidDomain/ElementConnectivity>
-        custom rel field:elementStartOffset = </World/FluidDomain/ElementStartOffset>
+        rel scientific:mesh:points = </World/FluidDomain.scientific:array:points:value>
+        rel scientific:mesh:elementConnectivity = </World/FluidDomain.scientific:array:elementConnectivity:value>
+        rel scientific:mesh:elementStartOffset = </World/FluidDomain.scientific:array:elementStartOffset:value>
 
-        # --- CGNS field arrays (bulk data in solver native .cgns file) ---
+        uniform string scientific:field:pressure:name = "Pressure"
+        uniform token scientific:field:pressure:association = "cell"
+        custom float[] scientific:array:pressure:value
 
-        def CaeCgnsFieldArray "GridCoordinatesX"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateX"
-            uniform token fieldAssociation = "vertex"
-        }
+        uniform string scientific:field:velocity:name = "Velocity"
+        uniform token scientific:field:velocity:association = "cell"
+        custom float3[] scientific:array:velocity:value
 
-        def CaeCgnsFieldArray "GridCoordinatesY"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateY"
-            uniform token fieldAssociation = "vertex"
-        }
+        uniform string scientific:field:temperature:name = "Temperature"
+        uniform token scientific:field:temperature:association = "cell"
+        custom float[] scientific:array:temperature:value
 
-        def CaeCgnsFieldArray "GridCoordinatesZ"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/CoordinateZ"
-            uniform token fieldAssociation = "vertex"
-        }
+        uniform token scientific:array:points:association = "node"
+        custom point3f[] scientific:array:points:value
 
-        def CaeCgnsFieldArray "ElementConnectivity"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/Elements/ElementConnectivity"
-            uniform token fieldAssociation = "none"
-        }
+        uniform token scientific:array:elementConnectivity:association = "none"
+        custom int[] scientific:array:elementConnectivity:value
 
-        def CaeCgnsFieldArray "ElementStartOffset"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/Elements/ElementStartOffset"
-            uniform token fieldAssociation = "none"
-        }
-
-        def CaeCgnsFieldArray "Pressure"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/FlowSolution/Pressure"
-            uniform token fieldAssociation = "cell"
-        }
-
-        def CaeCgnsFieldArray "Velocity"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/FlowSolution/Velocity"
-            uniform token fieldAssociation = "cell"
-        }
-
-        def CaeCgnsFieldArray "Temperature"
-        {
-            asset[] fileNames = [@./simulation_results.cgns@]
-            string fieldPath = "/Base/Zone/FlowSolution/Temperature"
-            uniform token fieldAssociation = "cell"
-        }
+        uniform token scientific:array:elementStartOffset:association = "none"
+        custom int[] scientific:array:elementStartOffset:value
     }
 }

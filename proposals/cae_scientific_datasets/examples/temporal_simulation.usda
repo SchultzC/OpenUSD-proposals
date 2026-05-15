@@ -1,40 +1,35 @@
 #usda 1.0
 (
-    doc = """Example: Time varying simulation data.
+    doc = """Illustrative, non-normative example: time-varying scientific
+    data exposed as USD time samples on native attributes.
 
-    Demonstrates how USD's timeSamples mechanism expresses the temporal
-    dimension of CAE data. The displacement field references different
-    CGNS files at each timestep while the mesh remains static."""
+    Empty arrays stand in for values that a lazy file-format implementation
+    would resolve from source files at the requested USD time code."""
     defaultPrim = "World"
 )
 
 def Xform "World"
 {
-    def CaeDataSet "TransientAnalysis" (
-        prepend apiSchemas = ["CaePointCloudAPI"]
+    def ScientificDataset "TransientAnalysis" (
+        prepend apiSchemas = [
+            "ScientificFieldAPI:displacement",
+            "ScientificArrayAPI:displacement",
+            "ScientificArrayAPI:points"
+        ]
     )
     {
-        rel cae:pointCloud:coordinates = </World/TransientAnalysis/Points>
-        custom rel field:displacement = </World/TransientAnalysis/Displacement>
+        asset scientific:source:file = @./transient_results.cgns@
 
-        def CaeCgnsFieldArray "Points"
-        {
-            asset[] fileNames = [@./results_t000.cgns@]
-            string fieldPath = "/Base/Zone/GridCoordinates/Coordinates"
-            uniform token fieldAssociation = "vertex"
-        }
+        uniform token scientific:array:points:association = "node"
+        custom point3f[] scientific:array:points:value
 
-        def CaeCgnsFieldArray "Displacement"
-        {
-            # Time varying: different files per timestep
-            asset[] fileNames.timeSamples = {
-                0:   [@./results_t000.cgns@],
-                10:  [@./results_t010.cgns@],
-                20:  [@./results_t020.cgns@],
-                30:  [@./results_t030.cgns@],
-            }
-            string fieldPath = "/Base/Zone/FlowSolution/Displacement"
-            uniform token fieldAssociation = "vertex"
+        uniform string scientific:field:displacement:name = "Displacement"
+        uniform token scientific:field:displacement:association = "node"
+        custom float3[] scientific:array:displacement:value.timeSamples = {
+            0: [],
+            10: [],
+            20: [],
+            30: [],
         }
     }
 }

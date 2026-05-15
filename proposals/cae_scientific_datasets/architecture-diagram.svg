@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1360" height="760" viewBox="0 0 1360 760" role="img" aria-labelledby="title desc">
+  <title id="title">OpenUSD scientific data architecture</title>
+  <desc id="desc">Diagram showing scientific source formats flowing through vendor file-format adapters into native OpenUSD composition and a candidate scientific data vocabulary, then into ecosystem consumers.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2f3437"/>
+    </marker>
+    <style>
+      .label { font: 22px Arial, sans-serif; fill: #111; }
+      .small { font: 17px Arial, sans-serif; fill: #111; }
+      .tiny { font: 14px Arial, sans-serif; fill: #333; }
+      .title { font: 25px Arial, sans-serif; font-weight: 700; fill: #111; }
+      .box { stroke: #202326; stroke-width: 2; rx: 10; ry: 10; }
+      .std { fill: #b8df72; }
+      .impl { fill: #ffd98a; }
+      .usd { fill: #a8d7e8; }
+      .consumer { fill: #d8d8d8; }
+      .line { stroke: #2f3437; stroke-width: 2.5; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect x="32" y="24" width="1296" height="72" fill="#fff" stroke="#202326" stroke-width="2"/>
+  <rect class="box std" x="64" y="42" width="36" height="36"/>
+  <text class="small" x="112" y="67">Candidate data-model standardization</text>
+  <rect class="box impl" x="438" y="42" width="36" height="36"/>
+  <text class="small" x="486" y="67">Vendor or domain implementation</text>
+  <rect class="box usd" x="786" y="42" width="36" height="36"/>
+  <text class="small" x="834" y="67">Existing OpenUSD mechanism</text>
+  <rect class="box consumer" x="1094" y="42" width="36" height="36"/>
+  <text class="small" x="1142" y="67">Ecosystem consumer</text>
+
+  <text class="title" x="48" y="156">Scientific Source Data</text>
+  <rect class="box impl" x="48" y="178" width="250" height="72"/>
+  <text class="label" x="76" y="222">Solver-native files</text>
+  <text class="tiny" x="76" y="242">CGNS, EnSight, OpenFOAM</text>
+  <rect class="box impl" x="48" y="276" width="250" height="72"/>
+  <text class="label" x="76" y="320">Domain formats</text>
+  <text class="tiny" x="76" y="340">Reservoir, EDA, lab data</text>
+  <rect class="box impl" x="48" y="374" width="250" height="72"/>
+  <text class="label" x="76" y="418">Derived datasets</text>
+  <text class="tiny" x="76" y="438">Surrogates, deltas, samples</text>
+
+  <text class="title" x="382" y="156">Runtime Access</text>
+  <rect class="box impl" x="360" y="190" width="260" height="92"/>
+  <text class="label" x="390" y="230">File-format adapters</text>
+  <text class="tiny" x="390" y="254">SdfFileFormat implementations</text>
+  <rect class="box impl" x="360" y="330" width="260" height="92"/>
+  <text class="label" x="392" y="370">Lazy value providers</text>
+  <text class="tiny" x="392" y="394">for heavy numeric arrays</text>
+
+  <text class="title" x="704" y="156">Composed USD View</text>
+  <rect class="box usd" x="688" y="182" width="292" height="86"/>
+  <text class="label" x="724" y="220">USD composition</text>
+  <text class="tiny" x="724" y="244">sublayers, references, payloads</text>
+  <rect class="box usd" x="688" y="300" width="292" height="86"/>
+  <text class="label" x="724" y="338">Native attributes</text>
+  <text class="tiny" x="724" y="362">resolved through USD APIs</text>
+
+  <rect class="box std" x="656" y="438" width="356" height="176"/>
+  <text class="label" x="698" y="474">Scientific data vocabulary</text>
+  <text class="tiny" x="698" y="506">Dataset anchors</text>
+  <text class="tiny" x="698" y="530">Field and array descriptors</text>
+  <text class="tiny" x="698" y="554">Association, time, provenance</text>
+  <text class="tiny" x="698" y="578">Domain and vendor extensions</text>
+
+  <text class="title" x="1082" y="156">Consumers</text>
+  <rect class="box consumer" x="1062" y="184" width="250" height="72"/>
+  <text class="small" x="1094" y="216">OpenUSD applications</text>
+  <text class="tiny" x="1094" y="238">not tied to one app stack</text>
+  <rect class="box consumer" x="1062" y="282" width="250" height="72"/>
+  <text class="small" x="1094" y="314">Analysis pipelines</text>
+  <text class="tiny" x="1094" y="336">query fields through USD</text>
+  <rect class="box consumer" x="1062" y="380" width="250" height="72"/>
+  <text class="small" x="1094" y="412">Visualization tools</text>
+  <text class="tiny" x="1094" y="434">derive views from fields</text>
+  <rect class="box consumer" x="1062" y="478" width="250" height="72"/>
+  <text class="small" x="1094" y="510">AI and digital twins</text>
+  <text class="tiny" x="1094" y="532">compose predictions and truth</text>
+
+  <path class="line" d="M298 214 C326 214 332 236 360 236"/>
+  <path class="line" d="M298 312 C326 312 332 250 360 250"/>
+  <path class="line" d="M298 410 C326 410 332 376 360 376"/>
+  <path class="line" d="M620 236 C650 236 658 224 688 224"/>
+  <path class="line" d="M620 376 C650 376 658 344 688 344"/>
+  <path class="line" d="M834 386 L834 438"/>
+  <path class="line" d="M980 224 C1024 224 1024 220 1062 220"/>
+  <path class="line" d="M980 344 C1024 344 1024 318 1062 318"/>
+  <path class="line" d="M1012 526 C1038 526 1038 416 1062 416"/>
+  <path class="line" d="M1012 558 C1038 558 1038 514 1062 514"/>
+
+  <text class="tiny" x="372" y="626">Implementation may use SdfAbstractData, caches, source libraries, and file-format arguments.</text>
+  <text class="tiny" x="658" y="650">Standardization target is the composed USD data contract, not one runtime plugin stack.</text>
+</svg>

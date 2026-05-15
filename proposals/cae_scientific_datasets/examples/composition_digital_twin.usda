@@ -1,40 +1,36 @@
 #usda 1.0
 (
-    doc = """Example: USD composition assembling simulation, CAD, and AI data.
-
-    Demonstrates nondestructive composition of heterogeneous data
-    sources in a single stage. Each source retains its own provenance
-    and source of truth. An algorithm operating on the composed stage
-    can access solver results and surrogate predictions through the
-    same CaeDataSet interface."""
+    doc = """Illustrative, non-normative example: CAD, solver-native
+    scientific data, and surrogate output composed into one USD stage."""
     defaultPrim = "DigitalTwin"
     subLayers = [
-        @./cad_geometry.usd@,
-        @./simulation_results.usd@,
-        @./ai_surrogate_fields.usd@
+        @./cad_geometry.usd@
     ]
 )
 
 def Xform "DigitalTwin"
 {
-    # CAD geometry from engineering (UsdGeom in the cad layer)
     def "Geometry" (
-        references = </CADModel/Body>
+        prepend references = @./cad_geometry.usd@</CADModel/Body>
     )
     {
     }
 
-    # Solver results (CaeDataSet from the simulation layer)
-    def "SimulationResults" (
-        references = </World/FluidDomain>
+    def "MeasuredOrSolvedResult" (
+        prepend payload = @./simulation_results.cgns@
     )
     {
     }
 
-    # AI surrogate predictions (same CaeDataSet schema contract)
     def "SurrogatePrediction" (
-        references = </Surrogate/PredictedFlow>
+        prepend payload = @./surrogate_prediction.npz@
     )
     {
+    }
+
+    def "Comparison"
+    {
+        rel scientific:comparison:reference = </DigitalTwin/MeasuredOrSolvedResult>
+        rel scientific:comparison:candidate = </DigitalTwin/SurrogatePrediction>
     }
 }
