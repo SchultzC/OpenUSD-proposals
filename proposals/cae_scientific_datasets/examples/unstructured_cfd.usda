@@ -5,7 +5,7 @@
 
     Schema and property names in this file are placeholders for discussion.
     The important behavior is that field values are regular USD attributes,
-    even when an implementation resolves them lazily from a solver-native file."""
+    even when an implementation resolves them lazily from source layers."""
     defaultPrim = "World"
 )
 
@@ -21,17 +21,12 @@ def Xform "World"
             "ScientificFieldAPI:temperature",
             "ScientificArrayAPI:temperature",
             "ScientificArrayAPI:points",
-            "ScientificArrayAPI:elementConnectivity",
-            "ScientificArrayAPI:elementStartOffset"
+            "ScientificArrayAPI:faceVertexIndices",
+            "ScientificArrayAPI:faceVertexCounts"
         ]
     )
     {
-        asset scientific:source:file = @./simulation_results.cgns@
         uniform token scientific:topology:kind = "unstructuredMesh"
-
-        rel scientific:mesh:points = </World/FluidDomain.scientific:array:points:value>
-        rel scientific:mesh:elementConnectivity = </World/FluidDomain.scientific:array:elementConnectivity:value>
-        rel scientific:mesh:elementStartOffset = </World/FluidDomain.scientific:array:elementStartOffset:value>
 
         uniform string scientific:field:pressure:name = "Pressure"
         uniform token scientific:field:pressure:association = "cell"
@@ -48,10 +43,10 @@ def Xform "World"
         uniform token scientific:array:points:association = "node"
         custom point3f[] scientific:array:points:value
 
-        uniform token scientific:array:elementConnectivity:association = "none"
-        custom int[] scientific:array:elementConnectivity:value
+        uniform token scientific:array:faceVertexIndices:association = "none"
+        custom int[] scientific:array:faceVertexIndices:value
 
-        uniform token scientific:array:elementStartOffset:association = "none"
-        custom int[] scientific:array:elementStartOffset:value
+        uniform token scientific:array:faceVertexCounts:association = "none"
+        custom int[] scientific:array:faceVertexCounts:value
     }
 }

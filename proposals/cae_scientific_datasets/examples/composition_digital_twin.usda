@@ -27,10 +27,4 @@ def Xform "DigitalTwin"
     )
     {
     }
-
-    def "Comparison"
-    {
-        rel scientific:comparison:reference = </DigitalTwin/MeasuredOrSolvedResult>
-        rel scientific:comparison:candidate = </DigitalTwin/SurrogatePrediction>
-    }
 }

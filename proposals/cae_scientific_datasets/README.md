@@ -202,6 +202,13 @@ mechanism. `SdfFileFormat` and `SdfAbstractData` are one testable path for
 large, read-only scientific arrays, but the data model should not depend on one
 implementation detail. The composed USD view is the contract.
 
+A composed dataset should also be able to receive opinions from more than one
+source layer. For example, topology may be described by one source-format
+adapter while field arrays are contributed by another. The shared vocabulary
+therefore should not assume that one dataset prim has one authoritative source
+file attribute; source identity and provenance need to be compatible with USD
+composition, layer identity, and source-format-specific descriptors.
+
 ### How should vendor and domain extensions mature?
 
 Scientific data is too broad for a single first proposal to standardize every
@@ -383,7 +390,8 @@ A minimal vocabulary likely needs:
 - a way to describe named fields;
 - a way to describe named arrays and their value attributes;
 - association metadata for where values live;
-- relationships or properties that describe topology and source provenance;
+- descriptors, properties, or agreed array instance names that describe
+  topology and source provenance;
 - time and subset-selection conventions that compose cleanly;
 - typed controls for source-format selection, time mapping, cache policy, or
   streaming hints where those controls affect composition or value access.
@@ -462,9 +470,10 @@ scenarios:
 ## Illustrative encoding
 
 The examples in this section are intentionally non-normative. They show the
-kind of USD view that a scientific source-format adapter could provide. Names
-such as `ScientificDataset` and `ScientificFieldAPI` are placeholders for
-discussion, not proposed final schema names.
+kind of USD-visible behavior that a scientific source-format adapter could
+provide. Names such as `ScientificDataset` and `ScientificFieldAPI` are
+placeholders for discussion, not proposed final schema names or required
+properties.
 
 ### Direct composition of a source file
 
@@ -502,12 +511,11 @@ def ScientificDataset "FluidDomain" (
         "ScientificFieldAPI:pressure",
         "ScientificArrayAPI:pressure",
         "ScientificFieldAPI:velocity",
-        "ScientificArrayAPI:velocity"
+        "ScientificArrayAPI:velocity",
+        "ScientificArrayAPI:points"
     ]
 )
 {
-    asset scientific:source:file = @./simulation_results.cgns@
-
     uniform string scientific:field:pressure:name = "Pressure"
     uniform token scientific:field:pressure:association = "cell"
     custom float[] scientific:array:pressure:value
@@ -515,12 +523,16 @@ def ScientificDataset "FluidDomain" (
     uniform string scientific:field:velocity:name = "Velocity"
     uniform token scientific:field:velocity:association = "cell"
     custom float3[] scientific:array:velocity:value
+
+    custom point3f[] scientific:array:points:value
 }
 ```
 
 The important point is that `scientific:array:*:value` is a USD attribute. A
 lazy implementation may provide the value from an `SdfAbstractData`-backed
-layer, but the consumer still calls the normal USD attribute API.
+layer, but the consumer still calls the normal USD attribute API. The example
+does not include a dataset-level source-file attribute because a composed
+dataset may combine topology, fields, and metadata from multiple source layers.
 
 ### Composition with CAD and surrogate output
 

@@ -18,8 +18,6 @@ def Xform "World"
         ]
     )
     {
-        asset scientific:source:file = @./transient_results.cgns@
-
         uniform token scientific:array:points:association = "node"
         custom point3f[] scientific:array:points:value
 
