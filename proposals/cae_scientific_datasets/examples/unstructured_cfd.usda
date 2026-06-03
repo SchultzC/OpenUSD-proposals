@@ -1,0 +1,52 @@
+#usda 1.0
+(
+    doc = """Illustrative, non-normative example: an expanded USD view of an
+    unstructured CFD result exposed by a scientific source-file adapter.
+
+    Schema and property names in this file are placeholders for discussion.
+    The important behavior is that field values are regular USD attributes,
+    even when an implementation resolves them lazily from source layers."""
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def ScientificDataset "FluidDomain" (
+        prepend apiSchemas = [
+            "ScientificMeshAPI",
+            "ScientificFieldAPI:pressure",
+            "ScientificArrayAPI:pressure",
+            "ScientificFieldAPI:velocity",
+            "ScientificArrayAPI:velocity",
+            "ScientificFieldAPI:temperature",
+            "ScientificArrayAPI:temperature",
+            "ScientificArrayAPI:points",
+            "ScientificArrayAPI:faceVertexIndices",
+            "ScientificArrayAPI:faceVertexCounts"
+        ]
+    )
+    {
+        uniform token scientific:topology:kind = "unstructuredMesh"
+
+        uniform string scientific:field:pressure:name = "Pressure"
+        uniform token scientific:field:pressure:association = "cell"
+        custom float[] scientific:array:pressure:value
+
+        uniform string scientific:field:velocity:name = "Velocity"
+        uniform token scientific:field:velocity:association = "cell"
+        custom float3[] scientific:array:velocity:value
+
+        uniform string scientific:field:temperature:name = "Temperature"
+        uniform token scientific:field:temperature:association = "cell"
+        custom float[] scientific:array:temperature:value
+
+        uniform token scientific:array:points:association = "node"
+        custom point3f[] scientific:array:points:value
+
+        uniform token scientific:array:faceVertexIndices:association = "none"
+        custom int[] scientific:array:faceVertexIndices:value
+
+        uniform token scientific:array:faceVertexCounts:association = "none"
+        custom int[] scientific:array:faceVertexCounts:value
+    }
+}

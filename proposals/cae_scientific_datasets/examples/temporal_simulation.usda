@@ -1,0 +1,33 @@
+#usda 1.0
+(
+    doc = """Illustrative, non-normative example: time-varying scientific
+    data exposed as USD time samples on native attributes.
+
+    Empty arrays stand in for values that a lazy file-format implementation
+    would resolve from source files at the requested USD time code."""
+    defaultPrim = "World"
+)
+
+def Xform "World"
+{
+    def ScientificDataset "TransientAnalysis" (
+        prepend apiSchemas = [
+            "ScientificFieldAPI:displacement",
+            "ScientificArrayAPI:displacement",
+            "ScientificArrayAPI:points"
+        ]
+    )
+    {
+        uniform token scientific:array:points:association = "node"
+        custom point3f[] scientific:array:points:value
+
+        uniform string scientific:field:displacement:name = "Displacement"
+        uniform token scientific:field:displacement:association = "node"
+        custom float3[] scientific:array:displacement:value.timeSamples = {
+            0: [],
+            10: [],
+            20: [],
+            30: [],
+        }
+    }
+}
