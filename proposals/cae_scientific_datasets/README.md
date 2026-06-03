@@ -3,18 +3,29 @@
 ## Contents
 
 - [Introduction](#introduction)
+- [Glossary](#glossary)
+- [Related proposals and references](#related-proposals-and-references)
 - [Motivation](#motivation)
   - [Scientific data today](#scientific-data-today)
   - [OpenUSD context](#openusd-context)
 - [Problem statement](#problem-statement)
-  - [Two concerns to keep separate](#two-concerns-to-keep-separate)
+  - [Two primary but distinct concerns](#two-primary-but-distinct-concerns)
+  - [Separable concerns within the data model](#separable-concerns-within-the-data-model)
   - [Why this matters now](#why-this-matters-now)
 - [Key questions](#key-questions)
   - [What is the minimum common vocabulary?](#what-is-the-minimum-common-vocabulary)
   - [How should scientific files participate in composition?](#how-should-scientific-files-participate-in-composition)
   - [How should vendor and domain extensions mature?](#how-should-vendor-and-domain-extensions-mature)
 - [Existing OpenUSD mechanisms](#existing-openusd-mechanisms)
+  - [UsdGeom](#usdgeom)
+  - [UsdVol](#usdvol)
+  - [SdfFileFormat and SdfAbstractData](#sdffileformat-and-sdfabstractdata)
+  - [customData and ad-hoc metadata](#customdata-and-ad-hoc-metadata)
 - [Industry use cases](#industry-use-cases)
+  - [CAE, CFD, and FEA](#cae-cfd-and-fea)
+  - [Electronics, EDA, and multiphysics](#electronics-eda-and-multiphysics)
+  - [Energy, geoscience, and environment](#energy-geoscience-and-environment)
+  - [AI, surrogates, and digital twins](#ai-surrogates-and-digital-twins)
 - [Design considerations](#design-considerations)
   - [Principles](#principles)
   - [Likely direction](#likely-direction)
@@ -38,7 +49,20 @@ formats can be discovered and queried through USD without first being converted
 into an application-specific intermediate.
 
 This proposal reframes earlier CAE schema work around a broader scientific data
-problem. The goal is not to standardize a particular vendor implementation or
+problem. Computer-aided engineering (CAE) is the most mature worked vertical
+here, and the source of the reference implementation, but the same data-model
+concerns — datasets, fields, arrays, association, time, ensembles, and
+provenance — are not specific to CAE. The reference implementation already
+exercises some of them beyond core CAE, in reservoir simulation and particle
+methods, and the same concerns recur in electronics and EDA, geoscience and
+climate, and laboratory measurement. Framing the effort as *scientific data*
+rather than *OpenUSD for CAE* keeps the
+vocabulary domain-neutral, so CAE can be the first proving ground without making
+the resulting standard CAE-specific; domain-specific meaning lives in
+extensions. (See the [Glossary](#glossary) for the engineering terms used
+throughout.)
+
+The goal is not to standardize a particular vendor implementation or
 OpenUSD plugin architecture. The goal is to build consensus on the data-model
 concepts that scientific files need when they participate in USD composition:
 datasets, fields, arrays, topology association, time, provenance, and extension
@@ -57,6 +81,68 @@ implementation details. Blue elements are existing OpenUSD mechanisms. Gray
 elements are ecosystem consumers.
 
 ![Architecture diagram showing scientific source data flowing through file-format adapters and lazy value providers into OpenUSD composition, native attributes, and a candidate scientific data vocabulary consumed by applications, analysis pipelines, visualization tools, and AI workflows.](architecture-diagram.svg)
+
+## Glossary
+
+This proposal is framed around *scientific data* rather than any single vertical,
+but its first worked examples come from engineering simulation. The following
+terms recur throughout.
+
+- **CAE (computer-aided engineering)** — simulation-based engineering analysis
+  (structural, fluid, thermal, electromagnetic) used to predict product behavior
+  before or alongside physical testing.
+- **CFD (computational fluid dynamics)** — simulation of fluid flow, heat
+  transfer, and related physics, usually on volumetric meshes.
+- **FEA (finite element analysis)** — simulation of structural or physical
+  response by discretizing a domain into finite elements.
+- **EDA (electronic design automation)** — design and analysis of electronic
+  systems, chips, and packages, including their thermal and electromagnetic
+  simulation.
+- **Solver-native format** — the file format a simulation or measurement tool
+  writes natively (for example CGNS, EnSight, or OpenFOAM); it is usually the
+  authoritative record of the result.
+- **Field** — a named physical or computed quantity sampled over a domain, such
+  as pressure, velocity, temperature, or stress.
+- **Association** — the part of a topology a field's values are defined on (node
+  or vertex, cell or element, face, and so on). It fixes the meaning of the
+  field's array and, together with the topology, its length.
+- **Dataset** — a logical simulation, measurement, or derived result set that can
+  be composed as a USD asset.
+- **Ensemble** — a family of related results indexed by a discrete, non-time
+  axis: an operating point, a design-of-experiments member, a solver variant, or
+  an iteration toward convergence.
+- **Provenance** — the source file, source field name, and source-format concept
+  that let a USD-visible value be traced back to its origin.
+
+## Related proposals and references
+
+This proposal deliberately follows the separation-of-concerns structure used by
+recent OpenUSD problem-statement proposals, so that each concern can mature on
+its own track.
+
+**Related proposals**
+
+- [Separation of Concerns for Identifiers in USD](https://github.com/PixarAnimationStudios/OpenUSD-proposals/pull/105)
+  — establishes vendor extensibility and the pattern of winning conceptual
+  alignment on separation before proposing schema. Source identifiers are also a
+  natural substrate for the provenance concern discussed below.
+- [Separation of Concerns for IP Protection in USD](https://github.com/PixarAnimationStudios/OpenUSD-proposals/pull/107)
+  — applies the same pattern, including a short glossary for reviewers outside
+  the domain.
+
+**OpenUSD concepts referenced**
+
+- [UsdVol](https://openusd.org/release/api/usd_vol_page_front.html) — a container
+  prim binds named fields to separate field-asset prims backed by external data;
+  the closest existing precedent for scientific fields.
+- [UsdGeomPrimvar](https://openusd.org/release/api/class_usd_geom_primvar.html)
+  and [UsdGeomPrimvarsAPI](https://openusd.org/release/api/class_usd_geom_primvars_a_p_i.html)
+  — interpolation, namespace inheritance, and renderer binding for primvars.
+- [Value resolution](https://openusd.org/release/glossary.html#usdglossary-valueresolution)
+  and [time samples](https://openusd.org/release/glossary.html#usdglossary-timesample)
+  — how USD resolves each attribute independently and interpolates over time.
+- [Variant sets](https://openusd.org/release/glossary.html#usdglossary-variantset)
+  — discrete, switchable, mutually exclusive alternatives.
 
 ## Motivation
 
@@ -120,9 +206,9 @@ appears in USD.
 
 ## Problem statement
 
-### Two concerns to keep separate
+### Two primary but distinct concerns
 
-Two related problems are often conflated:
+There are two related but different problems:
 
 1. **Scientific data vocabulary.** USD needs a shared way to describe datasets,
    fields, arrays, associations, time, and provenance so that scientific data is
@@ -142,6 +228,39 @@ they can mature from vendor-specific practice to multi-vendor convention. A
 runtime plugin is one way to deliver that behavior in a particular USD
 installation. The proposal should not require every scientific-data workflow to
 share one plugin architecture, one source repository, or one application stack.
+
+### Separable concerns within the data model
+
+Beyond that top-level split, the data model has a few aspects worth naming on
+their own: provenance, units, and non-time axes. Each matters to scientific
+data, but can be resolved independently of how the core fields and arrays
+are described.  These aspects are listed here for completeness but will be 
+treated them separate concerns:
+
+- **Provenance.** Tracing a USD-visible value back to its source file, source
+  field name, and source-format concept is separate from describing the field or
+  its array. It is also not a single dataset-level attribute: a composed dataset
+  can draw topology from one source layer and field arrays from another, so
+  provenance has to compose rather than assume one authoritative source per prim.
+  The source identifiers from the Identifiers proposal are a natural substrate.
+
+- **Units and physical meaning.** Whether units, dimensions, and quantity kind
+  belong in the first vocabulary or arrive as a follow-up (Open Question 5) is
+  independent of how fields and arrays are described. Units also compose
+  differently from ordinary attributes, a separate risk the eventual design must
+  address (see [Risks](#risks)).
+
+- **Ensembles and non-time axes.** USD time samples model a single time ordinate,
+  interpolated between samples by default. Many scientific results are not indexed
+  by interpolable time at all: ensemble members, operating points,
+  design-of-experiments cases, solver variants, and iterations toward convergence
+  are discrete, mutually exclusive selections, where interpolating "between" two
+  values is meaningless — closer to switchable alternatives than to animation.
+  This is separate from time, and the reference implementation shows the gap
+  today: it maps three different source ordinates — a time-step index, a physical
+  time value, and a solver iteration count — onto the single USD time axis, and
+  models no ensemble axis at all. The vocabulary should name this concern even if
+  its mechanism is decided later.
 
 ### Why this matters now
 
@@ -182,7 +301,8 @@ conceptual roles:
 | Array | The typed numeric storage behind coordinates, connectivity, fields, ids, masks, or other tabular data. |
 | Association | The domain over which values are defined: node, cell, face, edge, element, particle, grid sample, global, etc. |
 | Topology | The structure that gives arrays spatial meaning: mesh connectivity, structured grid extents, particles, volumes, or domain-specific layouts. |
-| Time and ensembles | The coordinates that select snapshots, iterations, operating points, samples, or model variants. |
+| Time | The continuous coordinate that selects snapshots of a transient result, modeled cleanly by USD time samples. |
+| Ensembles and non-time axes | The discrete, non-interpolable coordinates that select among related results: iterations, operating points, ensemble members, design-of-experiments cases, or model variants. |
 | Provenance | The source file, source field name, source format concept, and optional resolver information needed for traceability. |
 
 The open question is how much of this vocabulary must be common across all
@@ -240,6 +360,26 @@ partitioning, or solver-specific boundary-condition concepts that do not map
 1:1 to `UsdGeomMesh` without conversion. Converting everything to `UsdGeom`
 also makes it difficult to preserve the source file as the authoritative
 record.
+
+It is also reasonable to ask whether primvars could host field values directly.
+A `UsdGeomPrimvar` bundles three capabilities: a topology-location index space
+(the interpolation token — `constant`, `uniform` for one value per face or cell,
+`vertex` for one per mesh vertex, `varying`, or `faceVarying` — which ties an
+array's length to a topology element count); inheritance down namespace (a
+constant-interpolation primvar also applies to descendant prims unless
+overridden, which `UsdGeomPrimvarsAPI` resolves incrementally); and renderer
+binding (a prim's primvars are per-primitive overrides to its bound material,
+resolved against `UsdShadeShader` inputs). Field association needs only the
+first. Inheritance does not fit: a field's array is sized to one topology's
+element count — a pressure field has one value per cell of a particular zone —
+and USD already declines to inherit non-constant primvars for that reason.
+Renderer binding does not fit either, since fields are data to be queried and
+many are not renderable quantities. `UsdVol` (below) is the closer precedent: a
+container prim binds named fields whose values live in separate, externally
+backed prims, with no primvar inheritance or renderer binding. Association is
+therefore location-only metadata — a consumer that builds renderable geometry
+can map it to the matching interpolation (`vertex` for node-associated, `uniform`
+for cell-associated values), but the data model imposes no primvar semantics.
 
 `UsdGeom` should remain the right target when a faithful geometric
 representation is needed. Scientific data schemas should complement it rather
@@ -446,7 +586,8 @@ scenarios:
    should domain-specific associations extend it?
 
 5. **Units and physical meaning.** Should units, dimensions, and quantity kinds
-   be part of the first proposal, or should they be layered as a follow-up?
+   be part of the first proposal, or should they be layered as a follow-up? Their
+   behavior under composition is also a known hazard (see [Risks](#risks)).
 
 6. **Discovery and indexing.** How can consumers find datasets and fields in a
    large composed stage without requiring full-stage traversal in every
@@ -629,6 +770,30 @@ formats, partners, and applications.
 6. **Migration ambiguity.** During transition, plugin-backed layers and legacy
    delegate or importer stages may coexist. The proposal should keep the
    USD-visible contract independent of either migration path.
+
+7. **Unit reinterpretation under composition.** USD value resolution resolves
+   each attribute independently, with the strongest opinion winning — an
+   editorial model designed to let a stronger layer override an opinion. A unit
+   is not an editorial preference; it is a fact about how a stored array's
+   numbers must be read. A stronger layer that overrides only a field's unit
+   attribute, without also overriding its value array, would silently
+   reinterpret every number in that array — a failure mode ordinary USD
+   attributes do not have, because there the value and its meaning are one
+   opinion the strong layer replaces together, with no separately resolving unit
+   to override in isolation. USD already meets a related problem at stage scope:
+   `metersPerUnit` is stage metadata, and the documented guidance is that when
+   assembling assets of different metrics, the assembler must apply correctives —
+   USD does not rescale referenced data automatically. A per-field unit attribute
+   makes the hazard sharper, because each unit resolves independently per
+   attribute rather than as one stage-wide fact the assembler can see and
+   correct. Reference and payload composition make it worse still: the author of
+   the strong opinion may not be able to see the weak-opinion unit basis inside a
+   referenced or payloaded layer. This is not a first-proposal design ask, but it
+   is a hazard the eventual units design must handle, and it is why units are
+   named as a separable concern above. We ask CAE and EDA partners to contribute
+   worst-case examples: mixed-source datasets with divergent unit contexts, and
+   reference-plus-payload compositions where the strong-opinion author cannot see
+   the weak-opinion unit basis.
 
 ## Alternate approaches
 
